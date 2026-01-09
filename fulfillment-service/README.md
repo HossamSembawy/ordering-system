@@ -18,8 +18,6 @@ The **Fulfillment Service** is responsible for operational fulfillment execution
 
 ## 2) API endpoints
 
-> Payloads are intentionally minimal: **items and address are out of scope**.
-
 ### 2.1 Create task (called by Order Service)
 
 **POST** `/tasks`
@@ -117,9 +115,7 @@ The **Fulfillment Service** is responsible for operational fulfillment execution
 
 ## 3) Order states
 
-Order states are owned by the **Order Service**. Fulfillment Service only triggers updates.
-
-### Suggested Order states
+### Order states
 - `PLACED`
 - `VALIDATED`
 - `FULFILLMENT_PENDING`
@@ -136,13 +132,6 @@ Order states are owned by the **Order Service**. Fulfillment Service only trigge
 ---
 
 ## 4) Initial TDD tests (failing first)
-
-> Deliverable: **initial failing tests only** (no implementation required yet). Below is a concrete test list for the Fulfillment Service.
-
-### Suggested tooling (.NET)
-- **xUnit**
-- **FluentAssertions**
-- **Moq** (optional)
 
 ### Test suite A — Task creation
 1. **Create task returns `201` and creates a new task**

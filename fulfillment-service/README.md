@@ -1,6 +1,3 @@
-# Fulfillment Service (Ecommerce Order Management)
-
-
 ## 1) Service responsibility
 
 The **Fulfillment Service** is responsible for operational fulfillment execution via a **single human-worker task per order**.
@@ -91,12 +88,12 @@ The **Fulfillment Service** is responsible for operational fulfillment execution
 ```
 
 ```json
-{ "status": "FAILED" }
+{ "status": "REJECTED" }
 ```
 
 **Valid transitions**
 - `ASSIGNED -> IN_PROGRESS`
-- `IN_PROGRESS -> COMPLETED | FAILED`
+- `IN_PROGRESS -> COMPLETED | REJECTED`
 
 **Responses**
 - `200 OK`
@@ -105,7 +102,35 @@ The **Fulfillment Service** is responsible for operational fulfillment execution
 
 ---
 
-### 2.4 Read endpoints (useful for debugging/tests)
+### 2.4 Update order status
+
+**PATCH** `/orders/{orderId}`
+
+**Request examples**
+```json
+{ "status": "IN_PROGRESS" }
+```
+
+```json
+{ "status": "COMPLETED" }
+```
+
+```json
+{ "status": "REJECTED" }
+```
+
+**Valid transitions**
+- `ASSIGNED -> IN_PROGRESS`
+- `IN_PROGRESS -> COMPLETED | REJECTED`
+
+**Responses**
+- `200 OK`
+- `400 Bad Request` — invalid transition
+- `404 Not Found`
+
+---
+
+### 2.5 Read endpoints (useful for debugging/tests)
 
 - **GET** `/tasks/{taskId}`
 - **GET** `/tasks/by-order/{orderId}`
@@ -115,21 +140,11 @@ The **Fulfillment Service** is responsible for operational fulfillment execution
 
 ## 3) Order states
 
-### Order states
-- `PLACED`
-- `VALIDATED`
-- `FULFILLMENT_PENDING`
-- `FULFILLMENT_IN_PROGRESS`
-- `FULFILLED`
-- `FULFILLMENT_FAILED`
-
-### Mapping (Fulfillment task → Order state)
-- Task `CREATED` or `ASSIGNED` → `FULFILLMENT_PENDING`
-- Task `IN_PROGRESS` → `FULFILLMENT_IN_PROGRESS`
-- Task `COMPLETED` → `FULFILLED`
-- Task `FAILED` → `FULFILLMENT_FAILED`
-
----
+- **pending:** Order recieved by the service, validation in progress, fulfillment task not yet created
+- **assigned:** Fulfillment task created in fulfillment service, task in queue or assigned to worker, waiting for worker to start on order
+- **in_progress:** Worker has started on the task
+- **completed:** Worker finished the task, order has been fulfilled
+- **rejected:** order could not be accepted or completed (bad request/ insufficient stock), no fulfillment
 
 ## 4) Initial TDD tests (failing first)
 
@@ -182,7 +197,7 @@ The **Fulfillment Service** is responsible for operational fulfillment execution
 10. **Valid transitions succeed**
    - `ASSIGNED -> IN_PROGRESS` returns `200`
    - `IN_PROGRESS -> COMPLETED` returns `200`
-   - `IN_PROGRESS -> FAILED` returns `200`
+   - `IN_PROGRESS -> REJECTED` returns `200`
 
 ### Test suite D — Order Service notification (mocked)
 11. **Notifies Order Service when task becomes IN_PROGRESS**
@@ -194,15 +209,5 @@ The **Fulfillment Service** is responsible for operational fulfillment execution
    - Then: Order Service client is called with `FULFILLED`
 
 13. **Notifies Order Service when task becomes FAILED**
-   - Given: task transitions `IN_PROGRESS -> FAILED`
+   - Given: task transitions `IN_PROGRESS -> REJECTED`
    - Then: Order Service client is called with `FULFILLMENT_FAILED`
-
-### Optional reliability tests (nice-to-have)
-14. **Idempotent status updates**
-   - Given: task is already `COMPLETED`
-   - When: worker sends `COMPLETED` again
-   - Then: returns `200` (no-op) and does not double-notify Order Service
-
-15. **Capacity rule holds under concurrency**
-   - Simulate many claim calls for the same `workerId`
-   - Assert: active tasks never exceed 5

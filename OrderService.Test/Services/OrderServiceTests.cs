@@ -1,13 +1,7 @@
-﻿using Microsoft.EntityFrameworkCore;
-using OrderService.contacts;
+﻿using OrderService.contacts;
 using OrderService.Models;
 using OrderService.Services;
 using OrderService.Test.Data;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 
 namespace OrderService.Test.Services
 {
@@ -17,8 +11,10 @@ namespace OrderService.Test.Services
         public async Task UpdateAsync_Should_Update_Order_Status()
         {
             // Arrange
-            var context = DbContextHelper.GetInMemoryDbContext();
-            IOrderService service = new OrdersService(context);
+            var (context, connection) = DbContextHelper.GetSqliteInMemoryDbContext();
+            await using var dbContext = context;
+            using var _ = connection;
+            IOrderService service = new OrdersService(dbContext);
 
             var order = new Order
             {
@@ -27,8 +23,8 @@ namespace OrderService.Test.Services
                 Status = "Pending"
             };
 
-            context.Orders.Add(order);
-            await context.SaveChangesAsync();
+            dbContext.Orders.Add(order);
+            await dbContext.SaveChangesAsync();
 
             var updatedOrder = new Order
             {
@@ -39,7 +35,7 @@ namespace OrderService.Test.Services
             // Act
             var result = await service.UpdateAsync(order.OrderId, updatedOrder);
 
-            var savedOrder = context.Orders.First(o => o.OrderId == order.OrderId);
+            var savedOrder = dbContext.Orders.First(o => o.OrderId == order.OrderId);
 
             // Assert
             Assert.True(result);

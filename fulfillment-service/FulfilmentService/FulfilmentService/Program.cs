@@ -1,10 +1,13 @@
 
 using FulfilmentService.Database;
+using FulfilmentService.Database.Seeding;
+using FulfilmentService.Interfaces;
+using FulfilmentService.Repositories;
 using Microsoft.EntityFrameworkCore;
 
 namespace FulfilmentService
 {
-    public class Program
+    public partial class Program
     {
         public static void Main(string[] args)
         {
@@ -15,6 +18,8 @@ namespace FulfilmentService
             builder.Services.AddControllers();
             builder.Services.AddEndpointsApiExplorer();
             builder.Services.AddSwaggerGen();
+            builder.Services.AddScoped<IFulfilmentTaskRepository, FulfilmentTaskRepository>();
+            builder.Services.AddScoped<IWorkerRepository, WorkerRepository>();
             builder.Services.AddDbContext<FulfilmentDbContext>(opts =>
             {
                 opts.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection"));
@@ -26,6 +31,11 @@ namespace FulfilmentService
             {
                 app.UseSwagger();
                 app.UseSwaggerUI();
+                //using (var scope = app.Services.CreateScope())
+                //{
+                //    var dbContext = scope.ServiceProvider.GetRequiredService<FulfilmentDbContext>();
+                //    WorkerSeeder.SeedWorkers(dbContext);
+                //}
             }
 
             app.UseHttpsRedirection();

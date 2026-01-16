@@ -9,6 +9,6 @@ namespace FulfilmentService.Models
         public int? WorkerId { get; set; }
         public Worker? Worker { get; set; }
         public DateTime CreatedOn { get; set; } = DateTime.Now;
-        public Status Status { get; set; } = Status.Pending;
+        public string Status { get; set; }
     }
 }

@@ -1,22 +1,24 @@
-﻿using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.Data.Sqlite;
+using Microsoft.EntityFrameworkCore;
 using OrderService.Data;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 
 namespace OrderService.Test.Data
 {
     public static class DbContextHelper
     {
-        public static OrderDbContext GetInMemoryDbContext()
+        public static (OrderDbContext Context, SqliteConnection Connection) GetSqliteInMemoryDbContext()
         {
+            var connection = new SqliteConnection("DataSource=:memory:");
+            connection.Open();
+
             var options = new DbContextOptionsBuilder<OrderDbContext>()
-                .UseInMemoryDatabase(Guid.NewGuid().ToString()) // isolated DB per test
+                .UseSqlite(connection)
                 .Options;
 
-            return new OrderDbContext(options);
+            var context = new OrderDbContext(options);
+            context.Database.EnsureCreated();
+
+            return (context, connection);
         }
     }
 }

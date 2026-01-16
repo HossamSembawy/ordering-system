@@ -5,6 +5,8 @@ The **Fulfillment Service** is responsible for operational fulfillment execution
 **Responsibilities**
 - Create exactly **one task per order** (**idempotent** by `orderId`).
 - Orchestrate tasks to human workers.
+- Enforce: **each worker can have at most 5 active tasks** simultaneously.
+  - Active = `ASSIGNED` + `IN_PROGRESS`
 - Allow workers to update task status.
 - Notify the **Order Service** when task status changes so the Order state is updated.
 
@@ -59,6 +61,7 @@ The **Fulfillment Service** is responsible for operational fulfillment execution
   "taskId": "1",
   "orderId": "1",
   "status": "ASSIGNED",
+  "workerId": "W-7"
 }
 ```
 
@@ -74,6 +77,9 @@ The **Fulfillment Service** is responsible for operational fulfillment execution
 **PATCH** `/tasks/{taskId}/status`
 
 **Request examples**
+```json
+{ "status": "IN_PROGRESS" }
+```
 
 ```json
 { "status": "COMPLETED" }
@@ -121,6 +127,7 @@ The **Fulfillment Service** is responsible for operational fulfillment execution
 
 ---
 
+### 2.5 Read endpoints (useful for debugging/tests)
 
 ## 3) Task states
 

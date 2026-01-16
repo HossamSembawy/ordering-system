@@ -1,4 +1,7 @@
 
+using FulfilmentService.Database;
+using Microsoft.EntityFrameworkCore;
+
 namespace FulfilmentService
 {
     public class Program
@@ -10,10 +13,12 @@ namespace FulfilmentService
             // Add services to the container.
 
             builder.Services.AddControllers();
-            // Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
             builder.Services.AddEndpointsApiExplorer();
             builder.Services.AddSwaggerGen();
-
+            builder.Services.AddDbContext<FulfilmentDbContext>(opts =>
+            {
+                opts.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection"));
+            });
             var app = builder.Build();
 
             // Configure the HTTP request pipeline.

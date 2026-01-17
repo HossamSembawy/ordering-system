@@ -4,9 +4,9 @@ using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
 namespace FulfilmentService.Database.Configurations
 {
-    public class FulfilmentTaskConfigurations : IEntityTypeConfiguration<FulfilmentTask>
+    public class FulfilmentTaskConfigurations : IEntityTypeConfiguration<FulfillmentTask>
     {
-        public void Configure(EntityTypeBuilder<FulfilmentTask> builder)
+        public void Configure(EntityTypeBuilder<FulfillmentTask> builder)
         {
             builder.HasIndex(ft => ft.OrderId).IsUnique();
         }

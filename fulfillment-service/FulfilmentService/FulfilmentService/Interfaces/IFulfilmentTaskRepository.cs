@@ -1,4 +1,5 @@
 ﻿using FulfilmentService.Dtos;
+using FulfilmentService.Models;
 
 namespace FulfilmentService.Interfaces
 {
@@ -6,6 +7,7 @@ namespace FulfilmentService.Interfaces
     {
         Task<TaskResponse> CreateTask(int orderId);
         Task<TaskResponse> AssignTask(int taskId);
-        Task<TaskResponse> UpdateTaskStatus(int taskId, UpdateTaskDto model);
+        Task<FulfillmentTask> UpdateTaskStatus(int taskId, UpdateTaskDto model);
+        Task<FulfillmentTask> Get(int taskId);
     }
 }

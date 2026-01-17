@@ -132,7 +132,7 @@ namespace Fulfilment.Test.TaskTests
         // ---------- helpers ----------
         private async Task<int> SeedTask(int workerId, string status)
         {
-            var task = new FulfilmentTask
+            var task = new FulfillmentTask
             {
                 OrderId = 1000 + Random.Shared.Next(1, 999),
                 WorkerId = workerId,

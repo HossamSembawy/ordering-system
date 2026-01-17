@@ -44,10 +44,10 @@ namespace Fulfilment.Test.TaskTests
 
 
         [Test]
-        public async Task AssignTask_WhenTaskAlreadyAssigned_Throws()
+        public async Task AssignTask_WhenTaskAlreadyASSIGNED_Throws()
         {
             // seed assigned task
-            var task = new FulfillmentTask { OrderId = 1, WorkerId = 2, Status = "Assigned" };
+            var task = new FulfillmentTask { OrderId = 1, WorkerId = 2, Status = "ASSIGNED" };
             _db.Context.FulfilmentTasks.Add(task);
             await _db.Context.SaveChangesAsync();
 
@@ -69,12 +69,12 @@ namespace Fulfilment.Test.TaskTests
 
             Assert.That(response.Id, Is.EqualTo(taskId));
             Assert.That(response.OrderId, Is.EqualTo(123));
-            Assert.That(response.Status, Is.EqualTo("Assigned"));
+            Assert.That(response.Status, Is.EqualTo("ASSIGNED"));
 
             // Verify DB persisted assignment
             var persisted = await _db.Context.FulfilmentTasks.FindAsync(taskId);
             Assert.That(persisted!.WorkerId, Is.EqualTo(1));
-            Assert.That(persisted.Status, Is.EqualTo("Assigned"));
+            Assert.That(persisted.Status, Is.EqualTo("ASSIGNED"));
 
             var cursor = _db.Context.Cursors.First();
             Assert.That(cursor.Current, Is.EqualTo(1));
@@ -98,7 +98,7 @@ namespace Fulfilment.Test.TaskTests
 
             var persisted = await _db.Context.FulfilmentTasks.FindAsync(taskId);
             Assert.That(persisted!.WorkerId, Is.EqualTo(3));
-            Assert.That(persisted.Status, Is.EqualTo("Assigned"));
+            Assert.That(persisted.Status, Is.EqualTo("ASSIGNED"));
 
             var cursor = _db.Context.Cursors.First();
             Assert.That(cursor.Current, Is.EqualTo(3));
@@ -152,7 +152,7 @@ namespace Fulfilment.Test.TaskTests
                 {
                     OrderId = 10000 + workerId * 100 + i,
                     WorkerId = workerId,
-                    Status = "Assigned"
+                    Status = "ASSIGNED"
                 });
                 _db.Context.Workers.Find(workerId)!.ActiveTasksCount++;
             }

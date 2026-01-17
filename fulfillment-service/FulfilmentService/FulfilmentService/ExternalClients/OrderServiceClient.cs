@@ -19,7 +19,8 @@ namespace FulfilmentService.ExternalClients
                 Status = task.Status,
                 WorkerId = task.WorkerId
             };
-            var response = await _httpClient.PostAsJsonAsync($"/orders/{request.OrderId}/fulfillment", request, cancellationToken);
+            object obj=new {Status=task.Status, WorkerId=task.WorkerId};
+            var response = await _httpClient.PostAsJsonAsync($"/orders/{request.OrderId}/fulfillment", obj, cancellationToken);
             response.EnsureSuccessStatusCode();            
             return response;
         }

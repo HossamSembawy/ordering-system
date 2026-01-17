@@ -28,7 +28,7 @@ namespace FulfilmentService
             });
             builder.Services.AddHttpClient<IOrderServiceClient, OrderServiceClient>(client =>
             {
-                var baseUrl = builder.Configuration["FulfillmentService:BaseUrl"] ?? "http://localhost:5001";
+                var baseUrl = builder.Configuration["FulfillmentService:BaseUrl"] ?? "https://localhost:7017";
                 client.BaseAddress = new Uri(baseUrl);
             });
             var app = builder.Build();

@@ -5,8 +5,6 @@ The **Fulfillment Service** is responsible for operational fulfillment execution
 **Responsibilities**
 - Create exactly **one task per order** (**idempotent** by `orderId`).
 - Orchestrate tasks to human workers.
-- Enforce: **each worker can have at most 5 active tasks** simultaneously.
-  - Active = `ASSIGNED` + `IN_PROGRESS`
 - Allow workers to update task status.
 - Notify the **Order Service** when task status changes so the Order state is updated.
 
@@ -35,53 +33,47 @@ The **Fulfillment Service** is responsible for operational fulfillment execution
 **Response**
 ```json
 {
-  "taskId": "c2d9a2a1-0b5c-44d8-9c46-7c3f5a9f1f21",
-  "orderId": "ORD-123",
-  "status": "CREATED",
-  "workerId": null
+  "taskId": "1",
+  "orderId": "1",
+  "status": "Pending",
 }
 ```
 
 ---
 
-### 2.2 Claim a task (human worker pulls work)
+### 2.2 Assign a task
 
-**POST** `/workers/{workerId}/tasks/claim`
+**POST** `/Assign/{taskId}`
 
 **Behavior**
-- Enforces **max 5 active tasks** for the worker (`ASSIGNED` + `IN_PROGRESS`).
-- If allowed, assigns the oldest available task (`CREATED`) to the worker.
+- Enforces **max 5 active tasks** for the worker (`ASSIGNED`).
+- If allowed, assigns the oldest available task (`Pending`) to the worker.
 
 **Responses**
 - `200 OK` — task assigned
-- `204 No Content` — no available tasks
-- `409 Conflict` — worker already has 5 active tasks
+- `400 Bad Request` — Couldn't assign the task to a worker
 
 **Response (200)**
 ```json
 {
-  "taskId": "c2d9a2a1-0b5c-44d8-9c46-7c3f5a9f1f21",
-  "orderId": "ORD-123",
+  "taskId": "1",
+  "orderId": "1",
   "status": "ASSIGNED",
-  "workerId": "W-7"
 }
 ```
 
-**Error (409)**
+**Error (400)**
 ```json
-{ "code": "WORKER_CAPACITY_EXCEEDED", "message": "Worker already has 5 active tasks." }
+{ "code": "ALL_WORKERS_CAPACITY_EXCEEDED", "message": "No available workers." }
 ```
 
 ---
 
 ### 2.3 Update task status (worker processing)
 
-**PATCH** `/tasks/{taskId}`
+**PATCH** `/tasks/{taskId}/status`
 
 **Request examples**
-```json
-{ "status": "IN_PROGRESS" }
-```
 
 ```json
 { "status": "COMPLETED" }
@@ -92,8 +84,7 @@ The **Fulfillment Service** is responsible for operational fulfillment execution
 ```
 
 **Valid transitions**
-- `ASSIGNED -> IN_PROGRESS`
-- `IN_PROGRESS -> COMPLETED | REJECTED`
+- `ASSIGNED' -> COMPLETED | REJECTED`
 
 **Responses**
 - `200 OK`
@@ -104,7 +95,7 @@ The **Fulfillment Service** is responsible for operational fulfillment execution
 
 ### 2.4 Update order status
 
-**PATCH** `/orders/{orderId}`
+**PATCH** `/orders/{orderId}/status`
 
 **Request examples**
 ```json
@@ -130,84 +121,99 @@ The **Fulfillment Service** is responsible for operational fulfillment execution
 
 ---
 
-### 2.5 Read endpoints (useful for debugging/tests)
 
-- **GET** `/tasks/{taskId}`
-- **GET** `/tasks/by-order/{orderId}`
-- **GET** `/workers/{workerId}/tasks?activeOnly=true`
+## 3) Task states
 
----
-
-## 3) Order states
-
-- **pending:** Order recieved by the service, validation in progress, fulfillment task not yet created
-- **assigned:** Fulfillment task created in fulfillment service, task in queue or assigned to worker, waiting for worker to start on order
-- **in_progress:** Worker has started on the task
+- **pending:** Fulfillment task is created but not assigned to any workers yet.
+- **assigned:** Fulfillment task created in fulfillment service, task in queue or assigned to worker, waiting for worker to start on task
 - **completed:** Worker finished the task, order has been fulfilled
-- **rejected:** order could not be accepted or completed (bad request/ insufficient stock), no fulfillment
+- **failed:** task could not be completed (bad request), no fulfillment
+
+## 3.1) Task state machine :
+![Designer](Designer.jpg)
 
 ## 4) Initial TDD tests (failing first)
 
-### Test suite A — Task creation
-1. **Create task returns `201` and creates a new task**
-   - Given: `orderId` is new
-   - When: `POST /tasks` with `orderId`
-   - Then: response contains `taskId`, `status=CREATED`, and the task is persisted
+### Test suite A — Task creation (CreateTaskTests)
+1. **CreateTask creates a new task when `orderId` is new**
+   - Given: `orderId` does not exist
+   - When: `CreateTask(orderId)` is called
+   - Then: returned task has `Status = "Pending"`
 
-2. **Create task is idempotent by `orderId`**
-   - Given: a task already exists for `orderId`
-   - When: `POST /tasks` again with the same `orderId`
-   - Then: returns `200` and the **same** `taskId`
+2. **CreateTask is idempotent by `orderId`**
+   - Given: a task already exists for the same `orderId`
+   - When: `CreateTask(orderId)` is called again with the same `orderId`
+   - Then: both calls return the **same** `Id`
 
-3. **Exactly one task per order is enforced**
-   - Given: concurrent requests to create task for the same `orderId`
-   - When: two `POST /tasks` happen at the same time
-   - Then: only one task row exists; both callers observe the same `taskId`
+---
 
-### Test suite B — Claim & worker capacity (max 5 active)
-4. **Worker can claim a task when under capacity**
-   - Given: worker has 0–4 active tasks (`ASSIGNED`/`IN_PROGRESS`) and at least one `CREATED` task exists
-   - When: `POST /workers/{workerId}/tasks/claim`
-   - Then: returns `200`, task becomes `ASSIGNED`, `workerId` is set
+### Test suite B — Assignment & worker capacity (AssignTaskTests)
+3. **AssignTask throws when task is not found**
+   - Given: taskId does not exist
+   - When: `AssignTask(taskId)` is called
+   - Then: throws `Exception("Task not found")`
 
-5. **Worker cannot claim when already has 5 active tasks**
-   - Given: worker has 5 active tasks
-   - When: claim
-   - Then: returns `409 WORKER_CAPACITY_EXCEEDED`
+4. **AssignTask throws when task is already assigned**
+   - Given: task exists with `Status = "Assigned"` and already has `WorkerId`
+   - When: `AssignTask(taskId)` is called
+   - Then: throws `Exception("Task already assigned")`
 
-6. **Claim returns `204` when no tasks are available**
-   - Given: there are no `CREATED` tasks
-   - When: claim
-   - Then: returns `204 No Content`
+5. **AssignTask assigns based on cursor when a worker has capacity**
+   - Given: cursor is set to a known position (e.g., `Current = 0`)
+   - And: task exists and is unassigned
+   - And: worker at cursor position has capacity (< 5 active tasks)
+   - When: `AssignTask(taskId)` is called
+   - Then: task becomes `Status = "Assigned"`
+   - And: `WorkerId` is persisted in DB
+   - And: cursor advances to the next value
 
-7. **Claim picks the oldest available task**
-   - Given: multiple tasks in `CREATED` state with different creation times
-   - When: claim
-   - Then: the earliest created task is assigned
+6. **AssignTask skips workers at capacity and assigns the next available worker**
+   - Given: cursor starts at worker 1
+   - And: worker 1 has 5 active tasks (at capacity)
+   - And: worker 2 has 5 active tasks (at capacity)
+   - And: worker 3 has 4 active tasks (has capacity)
+   - When: `AssignTask(taskId)` is called
+   - Then: task is assigned to worker 3
+   - And: cursor updates to reflect the worker used
 
-8. **Two workers cannot claim the same task**
-   - Given: one `CREATED` task
-   - When: two different workers claim concurrently
-   - Then: exactly one receives the task; the other receives `204` (or a different task if available)
+7. **AssignTask throws when all workers are at capacity**
+   - Given: all workers have 5 active tasks
+   - And: task exists and is unassigned
+   - When: `AssignTask(taskId)` is called
+   - Then: throws `Exception("No available workers")`
+   - And: task remains unassigned (`WorkerId` is still `null`)
 
-### Test suite C — Status transitions
-9. **Invalid transition is rejected**
-   - Example: `CREATED -> COMPLETED` should return `400`
+---
 
-10. **Valid transitions succeed**
-   - `ASSIGNED -> IN_PROGRESS` returns `200`
-   - `IN_PROGRESS -> COMPLETED` returns `200`
-   - `IN_PROGRESS -> REJECTED` returns `200`
+### Test suite C — Status transitions & validation (UpdateTaskStatusTests)
+8. **UpdateTaskStatus throws when task is not found**
+   - Given: taskId does not exist
+   - When: `UpdateTaskStatus(taskId, dto)` is called
+   - Then: throws `Exception("Task not found")`
 
-### Test suite D — Order Service notification (mocked)
-11. **Notifies Order Service when task becomes IN_PROGRESS**
-   - Given: task transitions `ASSIGNED -> IN_PROGRESS`
-   - Then: Order Service client is called with `FULFILLMENT_IN_PROGRESS`
+9. **UpdateTaskStatus throws when worker is not assigned to the task**
+   - Given: task exists and is assigned to worker A
+   - When: `UpdateTaskStatus(taskId, dto)` is called using worker B
+   - Then: throws `Exception("Worker not assigned to this task")`
 
-12. **Notifies Order Service when task becomes COMPLETED**
-   - Given: task transitions `IN_PROGRESS -> COMPLETED`
-   - Then: Order Service client is called with `FULFILLED`
+10. **UpdateTaskStatus throws when task is already processed**
+   - Given: task exists with `Status = "Completed"` or `Status = "Failed"`
+   - When: `UpdateTaskStatus(taskId, dto)` is called
+   - Then: throws `Exception("Task already processed")`
 
-13. **Notifies Order Service when task becomes FAILED**
-   - Given: task transitions `IN_PROGRESS -> REJECTED`
-   - Then: Order Service client is called with `FULFILLMENT_FAILED`
+11. **UpdateTaskStatus rejects invalid transitions**
+   - Given: task exists with `Status = "Assigned"`
+   - When: attempting transition to `Status = "Pending"`
+   - Then: throws `Exception("Invalid Transition")`
+
+12. **UpdateTaskStatus allows valid transitions to Completed**
+   - Given: task exists with `Status = "Assigned"` and worker is assigned
+   - When: `UpdateTaskStatus(taskId, dto(Status="Completed"))` is called
+   - Then: status updates to `"Completed"`
+   - And: change is persisted in DB
+
+13. **UpdateTaskStatus allows valid transitions to Failed**
+   - Given: task exists with `Status = "Assigned"` and worker is assigned
+   - When: `UpdateTaskStatus(taskId, dto(Status="Failed"))` is called
+   - Then: status updates to `"Failed"`
+   - And: change is persisted in DB

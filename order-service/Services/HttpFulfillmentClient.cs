@@ -15,7 +15,7 @@ namespace OrderService.Services
 
         public async Task<FulfillmentTask> CreateTaskAsync(int orderId, CancellationToken cancellationToken = default)
         {
-            var response = await _httpClient.PostAsJsonAsync("/tasks", new { orderId }, cancellationToken);
+            var response = await _httpClient.PostAsJsonAsync("/tasks", orderId , cancellationToken);
             response.EnsureSuccessStatusCode();
 
             var task = await response.Content.ReadFromJsonAsync<FulfillmentTask>(cancellationToken: cancellationToken);

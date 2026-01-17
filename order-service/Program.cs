@@ -25,7 +25,7 @@ builder.Services.AddScoped<OrderWorkflowService>();
 
 builder.Services.AddHttpClient<IFulfillmentClient, HttpFulfillmentClient>(client =>
 {
-    var baseUrl = builder.Configuration["FulfillmentService:BaseUrl"] ?? "http://localhost:5001";
+    var baseUrl = builder.Configuration["FulfillmentService:BaseUrl"] ?? "https://localhost:7244";
     client.BaseAddress = new Uri(baseUrl);
 });
 
@@ -40,11 +40,11 @@ if (app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 
-using (var scope = app.Services.CreateScope())
-{
-    var dbContext = scope.ServiceProvider.GetRequiredService<OrderDbContext>();
-    InventorySeeding.SeedInventory(dbContext);
-}
+//using (var scope = app.Services.CreateScope())
+//{
+//    var dbContext = scope.ServiceProvider.GetRequiredService<OrderDbContext>();
+//    InventorySeeding.SeedInventory(dbContext);
+//}
 
 
 app.MapPost("/orders", async (
@@ -100,4 +100,4 @@ app.Run();
 
 public record CreateOrderRequest(int UserId, List<OrderItemRequest> Items);
 
-public record FulfillmentUpdateRequest(string Status, string? WorkerId);
+public record FulfillmentUpdateRequest(string Status, int? WorkerId);

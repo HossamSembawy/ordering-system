@@ -27,7 +27,7 @@ namespace FulfilmentService.Controllers
             {
                 return Ok(result);
             }
-            return Created();
+            return CreatedAtAction("GetTask", new { taskId = result.Id }, result);
         }
         [HttpPost("{taskId}/Assign")]
         public async Task<IActionResult> AssignTask(int taskId)
@@ -58,6 +58,13 @@ namespace FulfilmentService.Controllers
             {
                 return BadRequest(ex.Message);
             }
+        }
+        [HttpGet("/{taskId}")]
+        [ActionName("GetTask")]
+        public async Task<IActionResult> GetTask(int taskId)
+        {
+            var result = await _fulfilmentTaskRepository.Get(taskId);
+            return Ok(result);
         }
     }
 }

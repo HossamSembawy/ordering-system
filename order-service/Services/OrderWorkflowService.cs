@@ -89,7 +89,7 @@ namespace OrderService.Services
 		public async Task<bool> ApplyFulfillmentUpdateAsync(
 			int orderId,
 			string taskStatus,
-			string? workerId,
+			int? workerId,
 			CancellationToken cancellationToken = default)
 		{
 			var order = await _context.Orders.FirstOrDefaultAsync(o => o.OrderId == orderId, cancellationToken);

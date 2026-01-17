@@ -13,11 +13,11 @@ public static class InventorySeeding
 
         var inventoryItems = new List<Inventory>
         {
-            new Inventory { ProductId = 1, AvailableQty = 100 },
-            new Inventory { ProductId = 2, AvailableQty = 50 },
-            new Inventory { ProductId = 3, AvailableQty = 75 },
-            new Inventory { ProductId = 4, AvailableQty = 200 },
-            new Inventory { ProductId = 5, AvailableQty = 30 }
+            new Inventory { AvailableQty = 100 },
+            new Inventory { AvailableQty = 50 },
+            new Inventory { AvailableQty = 75 },
+            new Inventory { AvailableQty = 200 },
+            new Inventory { AvailableQty = 30 }
         };
 
         context.Inventories.AddRange(inventoryItems);

@@ -60,8 +60,10 @@ namespace FulfilmentService.Repositories
                 throw new Exception("No available workers");
             }
             task.WorkerId = workerId;
-            task.Status = "Assigned";
+            task.Status = "ASSIGNED";
+            var worker = await _dbContext.Workers.FirstOrDefaultAsync(w => w.Id == workerId);
             var cursor = await _dbContext.Cursors.FirstAsync(c => c.Id == 1);
+            worker!.ActiveTasksCount++;
             cursor.Current = workerId;
             await _dbContext.SaveChangesAsync();
             await transaction.CommitAsync();
@@ -89,11 +91,11 @@ namespace FulfilmentService.Repositories
             {
                 throw new Exception("Worker not assigned to this task");
             }
-            if (task.Status == "Completed" || task.Status=="Failed")
+            if (task.Status == "COMPLETED" || task.Status=="FAILED")
             {
                 throw new Exception("Task already processed");
             }
-            if ( task.Status == "Assigned" && model.Status!="Completed" && model.Status!= "Failed" )
+            if ( task.Status == "ASSIGNED" && model.Status!="COMPLETED" && model.Status!= "FAILED" )
             {
                 throw new Exception("Invalid Transition");
             }

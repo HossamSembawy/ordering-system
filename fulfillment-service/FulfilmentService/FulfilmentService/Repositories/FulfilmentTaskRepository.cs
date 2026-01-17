@@ -27,7 +27,7 @@ namespace FulfilmentService.Repositories
                     Status = "AlreadyExists"
                 };
             }
-            var fulfilmentTask = await _dbContext.AddAsync(new FulfilmentTask
+            var fulfilmentTask = await _dbContext.AddAsync(new FulfillmentTask
             {
                 OrderId = orderId,
                 Status = "Pending"
@@ -78,7 +78,7 @@ namespace FulfilmentService.Repositories
             return workerId;
         }
 
-        public async Task<TaskResponse> UpdateTaskStatus(int taskId, UpdateTaskDto model)
+        public async Task<FulfillmentTask> UpdateTaskStatus(int taskId, UpdateTaskDto model)
         {
             var task = _dbContext.FulfilmentTasks.FirstOrDefault(f => f.Id == taskId);
             if (task is null)
@@ -101,7 +101,12 @@ namespace FulfilmentService.Repositories
             var worker = await _dbContext.Workers.FirstOrDefaultAsync(w => w.Id == model.WorkerId);
             worker!.ActiveTasksCount--;
             await _dbContext.SaveChangesAsync();
-            return new TaskResponse() { Id = task.Id, OrderId = task.OrderId, Status = task.Status };
+            return task;
+        }
+        public async Task<FulfillmentTask> Get(int taskId)
+        {
+            var task = await _dbContext.FulfilmentTasks.AsNoTracking().FirstOrDefaultAsync(f => f.Id == taskId);
+            return task;
         }
     }
 }

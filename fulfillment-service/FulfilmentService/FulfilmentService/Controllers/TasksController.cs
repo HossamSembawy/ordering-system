@@ -1,4 +1,5 @@
 ﻿using FulfilmentService.Dtos;
+using FulfilmentService.ExternalClients;
 using FulfilmentService.Interfaces;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.HttpResults;
@@ -11,10 +12,12 @@ namespace FulfilmentService.Controllers
     public class TasksController : ControllerBase
     {
         private readonly IFulfilmentTaskRepository _fulfilmentTaskRepository;
+        private readonly IOrderServiceClient _orderClient;
 
-        public TasksController(IFulfilmentTaskRepository fulfilmentTaskRepository)
+        public TasksController(IFulfilmentTaskRepository fulfilmentTaskRepository, IOrderServiceClient orderClient)
         {
             _fulfilmentTaskRepository = fulfilmentTaskRepository;
+            _orderClient = orderClient;
         }
         [HttpPost]
         public async Task<IActionResult> CreateTask([FromBody] int OrderId)
@@ -26,12 +29,14 @@ namespace FulfilmentService.Controllers
             }
             return Created();
         }
-        [HttpPost("Assign/{taskId}")]
+        [HttpPost("{taskId}/Assign")]
         public async Task<IActionResult> AssignTask(int taskId)
         {
             try
             {
                 var result = await _fulfilmentTaskRepository.AssignTask(taskId);
+                var task = await _fulfilmentTaskRepository.Get(taskId);
+                await _orderClient.UpdateOrderStatus(task);
                 return Ok(result);
             }catch(Exception ex)
             {
@@ -45,6 +50,8 @@ namespace FulfilmentService.Controllers
             try
             {
                 var result = await _fulfilmentTaskRepository.UpdateTaskStatus(taskId, model);
+                var task = await _fulfilmentTaskRepository.Get(taskId);
+                await _orderClient.UpdateOrderStatus(task);
                 return Ok(result);
             }
             catch (Exception ex)

@@ -47,7 +47,7 @@ namespace Fulfilment.Test.TaskTests
         public async Task AssignTask_WhenTaskAlreadyAssigned_Throws()
         {
             // seed assigned task
-            var task = new FulfilmentTask { OrderId = 1, WorkerId = 2, Status = "Assigned" };
+            var task = new FulfillmentTask { OrderId = 1, WorkerId = 2, Status = "Assigned" };
             _db.Context.FulfilmentTasks.Add(task);
             await _db.Context.SaveChangesAsync();
 
@@ -134,7 +134,7 @@ namespace Fulfilment.Test.TaskTests
 
         private async Task<int> SeedUnassignedTask(int orderId)
         {
-            var task = new FulfilmentTask
+            var task = new FulfillmentTask
             {
                 OrderId = orderId,
                 WorkerId = null,
@@ -148,7 +148,7 @@ namespace Fulfilment.Test.TaskTests
         {
             for (int i = 0; i < count; i++)
             {
-                _db.Context.FulfilmentTasks.Add(new FulfilmentTask
+                _db.Context.FulfilmentTasks.Add(new FulfillmentTask
                 {
                     OrderId = 10000 + workerId * 100 + i,
                     WorkerId = workerId,

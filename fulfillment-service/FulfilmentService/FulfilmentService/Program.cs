@@ -1,6 +1,7 @@
 
 using FulfilmentService.Database;
 using FulfilmentService.Database.Seeding;
+using FulfilmentService.ExternalClients;
 using FulfilmentService.Interfaces;
 using FulfilmentService.Repositories;
 using Microsoft.EntityFrameworkCore;
@@ -20,9 +21,15 @@ namespace FulfilmentService
             builder.Services.AddSwaggerGen();
             builder.Services.AddScoped<IFulfilmentTaskRepository, FulfilmentTaskRepository>();
             builder.Services.AddScoped<IWorkerRepository, WorkerRepository>();
+            builder.Services.AddScoped<IOrderServiceClient, OrderServiceClient>();
             builder.Services.AddDbContext<FulfilmentDbContext>(opts =>
             {
                 opts.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection"));
+            });
+            builder.Services.AddHttpClient<IOrderServiceClient, OrderServiceClient>(client =>
+            {
+                var baseUrl = builder.Configuration["FulfillmentService:BaseUrl"] ?? "http://localhost:5001";
+                client.BaseAddress = new Uri(baseUrl);
             });
             var app = builder.Build();
 

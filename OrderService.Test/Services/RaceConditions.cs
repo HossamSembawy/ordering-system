@@ -17,8 +17,11 @@ namespace OrderService.Test.Services
         [Fact]
         public async Task Concurrent_orders_should_not_oversell_inventory()
         {
-            var keepAlive = new SqliteConnection(
-                "DataSource=:memory:;Cache=Shared");
+            const string connectionString =
+               "DataSource=order-race;Mode=Memory;Cache=Shared";
+
+            var keepAlive = new SqliteConnection(connectionString);
+
 
             await keepAlive.OpenAsync();
 
@@ -33,7 +36,7 @@ namespace OrderService.Test.Services
             async Task Run(int userId)
             {
                 await using var connection =
-                    new SqliteConnection("DataSource=:memory:;Cache=Shared");
+                    new SqliteConnection(connectionString);
 
                 await connection.OpenAsync();
 
@@ -81,22 +84,31 @@ namespace OrderService.Test.Services
         [Fact]
         public async Task Concurrent_requests_with_same_idempotency_key_should_create_one_order()
         {
-            var connection = new SqliteConnection("DataSource=:memory:");
-            await connection.OpenAsync();
+            const string connectionString =
+                "DataSource=order-idempotency;Mode=Memory;Cache=Shared";
 
-            await using (var setup = TestDbFactory.CreateContext(connection))
+            var keepAlive = new SqliteConnection(connectionString);
+            await keepAlive.OpenAsync();
+
+
+            await using (var setup = TestDbFactory.CreateContext(keepAlive))
             {
+                await setup.Database.EnsureCreatedAsync();
                 await SeedInventoryAsync(setup);
             }
 
             const string key = "same-key-123";
 
-            Task Run()
+            async Task Run()
             {
-                var ctx = TestDbFactory.CreateContext(connection);
+                await using var connection = new SqliteConnection(connectionString);
+                await connection.OpenAsync();
+
+                await using var ctx = TestDbFactory.CreateContext(connection);
+
                 var svc = new OrderWorkflowService(ctx, new FakeFulfillmentClient());
 
-                return svc.PlaceOrderAsync(
+                await svc.PlaceOrderAsync(
                     1,
                     key, // 🔑 same idempotency key
                     new[]
@@ -110,7 +122,7 @@ namespace OrderService.Test.Services
 
             await Task.WhenAll(t1, t2);
 
-            await using var assertCtx = TestDbFactory.CreateContext(connection);
+            await using var assertCtx = TestDbFactory.CreateContext(keepAlive);
 
             var orders = await assertCtx.Orders.ToListAsync();
             var inventory = await assertCtx.Inventories.FirstAsync();

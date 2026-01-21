@@ -87,10 +87,29 @@ namespace OrderService.Services
                 }).ToList()
             };
 
-            _context.Orders.Add(order);
-            await _context.SaveChangesAsync(cancellationToken);
+            try
+            {
+                _context.Orders.Add(order);
+                await _context.SaveChangesAsync(cancellationToken);
 
-            await transaction.CommitAsync(cancellationToken);
+                await transaction.CommitAsync(cancellationToken);
+            }
+            catch (DbUpdateException ex) when (IsUniqueConstraintViolation(ex))
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                _context.ChangeTracker.Clear();
+
+                var duplicate = await _context.Orders
+                    .FirstOrDefaultAsync(o =>
+                        o.UserId == userId &&
+                        o.IdempotencyKey == idempotencyKey,
+                        cancellationToken);
+
+                if (duplicate != null)
+                    return duplicate;
+
+                throw;
+            }
 
             // 🔥 Raw SQL invalidates tracking
             _context.ChangeTracker.Clear();
@@ -102,6 +121,12 @@ namespace OrderService.Services
                     CancellationToken.None));
 
             return order;
+        }
+
+        private static bool IsUniqueConstraintViolation(DbUpdateException ex)
+        {
+            return ex.InnerException is SqliteException sqliteException
+                && sqliteException.SqliteErrorCode == 19;
         }
 
         public async Task<bool> ApplyFulfillmentUpdateAsync(

@@ -8,86 +8,136 @@ namespace OrderService.Test.Services
 {
 	public class OrderWorkflowServiceTests
 	{
-		[Fact]
-		public async Task PlaceOrder_HappyPath_UpdatesInventoryAndCompletesOrder()
-		{
-			var (context, connection) = DbContextHelper.GetSqliteInMemoryDbContext();
-			await using var dbContext = context;
-			using var _ = connection;
-			dbContext.Inventories.Add(new Inventory { ProductId = 1, AvailableQty = 10 });
-			await dbContext.SaveChangesAsync();
+        [Fact]
+        public async Task PlaceOrder_HappyPath_UpdatesInventoryAndCompletesOrder()
+        {
+            var (context, connection) = DbContextHelper.GetSqliteInMemoryDbContext();
+            await using var dbContext = context;
+            using var _ = connection;
 
-			var fulfillmentClient = new TestFulfillmentClient();
-			var service = new OrderWorkflowService(dbContext, fulfillmentClient);
+            dbContext.Inventories.Add(new Inventory
+            {
+                ProductId = 1,
+                AvailableQty = 10
+            });
+            await dbContext.SaveChangesAsync();
 
-			var order = await service.PlaceOrderAsync(101, new List<OrderItemRequest>
-			{
-				new() { ProductId = 1, Qty = 2 }
-			});
+            var fulfillmentClient = new TestFulfillmentClient();
+            var service = new OrderWorkflowService(dbContext, fulfillmentClient);
 
-			Assert.Equal(OrderStatus.Pending, order.Status);
-			Assert.Single(fulfillmentClient.CreatedTasks);
-			Assert.Equal(order.OrderId, fulfillmentClient.CreatedTasks[0].OrderId);
+            var order = await service.PlaceOrderAsync(
+                userId: 101,
+                idempotencyKey: Guid.NewGuid().ToString(),
+                items: new List<OrderItemRequest>
+                {
+            new() { ProductId = 1, Qty = 2 }
+                });
 
-			var inventory = await dbContext.Inventories.SingleAsync(i => i.ProductId == 1);
-			Assert.Equal(8, inventory.AvailableQty);
+            // Order created
+            Assert.Equal(OrderStatus.Pending, order.Status);
 
-			var assigned = await service.ApplyFulfillmentUpdateAsync(order.OrderId, FulfillmentTaskStatus.Assigned, "worker-1");
-			Assert.True(assigned);
-			var assignedOrder = await dbContext.Orders.SingleAsync(o => o.OrderId == order.OrderId);
-			Assert.Equal(OrderStatus.Pending, assignedOrder.Status);
+            // Fire-and-forget task created
+            Assert.Single(fulfillmentClient.CreatedTasks);
+            Assert.Equal(order.OrderId, fulfillmentClient.CreatedTasks[0].OrderId);
 
-			var completed = await service.ApplyFulfillmentUpdateAsync(order.OrderId, FulfillmentTaskStatus.Completed, "worker-1");
-			Assert.True(completed);
-			var confirmedOrder = await dbContext.Orders.SingleAsync(o => o.OrderId == order.OrderId);
-			Assert.Equal(OrderStatus.Completed, confirmedOrder.Status);
-		}
+            // Inventory deducted
+            var inventory = await dbContext.Inventories.SingleAsync(i => i.ProductId == 1);
+            Assert.Equal(8, inventory.AvailableQty);
 
-		[Fact]
-		public async Task PlaceOrder_InsufficientStock_DoesNotCreateOrder()
-		{
-			var (context, connection) = DbContextHelper.GetSqliteInMemoryDbContext();
-			await using var dbContext = context;
-			using var _ = connection;
-			dbContext.Inventories.Add(new Inventory { ProductId = 1, AvailableQty = 1 });
-			await dbContext.SaveChangesAsync();
+            // Fulfillment lifecycle
+            var assigned = await service.ApplyFulfillmentUpdateAsync(
+                order.OrderId,
+                FulfillmentTaskStatus.Assigned,
+                workerId: 1);
 
-			var fulfillmentClient = new TestFulfillmentClient();
-			var service = new OrderWorkflowService(dbContext, fulfillmentClient);
+            Assert.True(assigned);
 
-			var exception = await Assert.ThrowsAsync<OrderPlacementException>(() =>
-				service.PlaceOrderAsync(201, new List<OrderItemRequest>
-				{
-					new() { ProductId = 1, Qty = 2 }
-				}));
+            var completed = await service.ApplyFulfillmentUpdateAsync(
+                order.OrderId,
+                FulfillmentTaskStatus.Completed,
+                workerId: 1);
 
-			Assert.Equal("INSUFFICIENT_STOCK", exception.Code);
-			Assert.Empty(dbContext.Orders);
-			var inventory = await dbContext.Inventories.SingleAsync(i => i.ProductId == 1);
-			Assert.Equal(1, inventory.AvailableQty);
-			Assert.Empty(fulfillmentClient.CreatedTasks);
-		}
+            Assert.True(completed);
 
-		[Fact]
-		public async Task ApplyFulfillmentUpdate_Rejected_DeletesOrder()
-		{
-			var (context, connection) = DbContextHelper.GetSqliteInMemoryDbContext();
-			await using var dbContext = context;
-			using var _ = connection;
-			dbContext.Inventories.Add(new Inventory { ProductId = 1, AvailableQty = 5 });
-			await dbContext.SaveChangesAsync();
+            var confirmedOrder =
+                await dbContext.Orders.SingleAsync(o => o.OrderId == order.OrderId);
 
-			var fulfillmentClient = new TestFulfillmentClient();
-			var service = new OrderWorkflowService(dbContext, fulfillmentClient);
+            Assert.Equal(OrderStatus.Completed, confirmedOrder.Status);
+        }
 
-			var order = await service.PlaceOrderAsync(301, new List<OrderItemRequest>
-			{
-				new() { ProductId = 1, Qty = 1 }
-			});
 
-			var rejected = await service.ApplyFulfillmentUpdateAsync(order.OrderId, FulfillmentTaskStatus.Rejected, "worker-2");
-			Assert.True(rejected);
-			Assert.Empty(dbContext.Orders);
-		}
-	}
+        [Fact]
+        public async Task PlaceOrder_InsufficientStock_DoesNotCreateOrder()
+        {
+            var (context, connection) = DbContextHelper.GetSqliteInMemoryDbContext();
+            await using var dbContext = context;
+            using var _ = connection;
+
+            dbContext.Inventories.Add(new Inventory
+            {
+                ProductId = 1,
+                AvailableQty = 1
+            });
+            await dbContext.SaveChangesAsync();
+
+            var fulfillmentClient = new TestFulfillmentClient();
+            var service = new OrderWorkflowService(dbContext, fulfillmentClient);
+
+            var ex = await Assert.ThrowsAsync<OrderPlacementException>(() =>
+                service.PlaceOrderAsync(
+                    userId: 201,
+                    idempotencyKey: Guid.NewGuid().ToString(),
+                    items: new List<OrderItemRequest>
+                    {
+                new() { ProductId = 1, Qty = 2 }
+                    }));
+
+            Assert.Equal("INSUFFICIENT_STOCK", ex.Code);
+
+            Assert.Empty(dbContext.Orders);
+
+            var inventory =
+                await dbContext.Inventories.SingleAsync(i => i.ProductId == 1);
+
+            Assert.Equal(1, inventory.AvailableQty);
+
+            Assert.Empty(fulfillmentClient.CreatedTasks);
+        }
+
+
+        [Fact]
+        public async Task ApplyFulfillmentUpdate_Rejected_DeletesOrder()
+        {
+            var (context, connection) = DbContextHelper.GetSqliteInMemoryDbContext();
+            await using var dbContext = context;
+            using var _ = connection;
+
+            dbContext.Inventories.Add(new Inventory
+            {
+                ProductId = 1,
+                AvailableQty = 5
+            });
+            await dbContext.SaveChangesAsync();
+
+            var fulfillmentClient = new TestFulfillmentClient();
+            var service = new OrderWorkflowService(dbContext, fulfillmentClient);
+
+            var order = await service.PlaceOrderAsync(
+                userId: 301,
+                idempotencyKey: Guid.NewGuid().ToString(),
+                items: new List<OrderItemRequest>
+                {
+            new() { ProductId = 1, Qty = 1 }
+                });
+
+            var rejected = await service.ApplyFulfillmentUpdateAsync(
+                order.OrderId,
+                FulfillmentTaskStatus.Rejected,
+                workerId: 2);
+
+            Assert.True(rejected);
+            Assert.Empty(dbContext.Orders);
+        }
+
+    }
 }

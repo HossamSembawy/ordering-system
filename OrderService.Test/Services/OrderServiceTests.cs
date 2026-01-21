@@ -20,7 +20,8 @@ namespace OrderService.Test.Services
             {
                 OrderId = 1,
                 UserId = 1,
-                Status = "Pending"
+                Status = "Pending",
+                IdempotencyKey = Guid.NewGuid().ToString()
             };
 
             dbContext.Orders.Add(order);

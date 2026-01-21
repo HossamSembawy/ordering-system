@@ -1,3 +1,4 @@
+﻿using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using OrderService.contacts;
 using OrderService.Data;
@@ -5,119 +6,142 @@ using OrderService.Models;
 
 namespace OrderService.Services
 {
-	public class OrderWorkflowService
-	{
-		private readonly OrderDbContext _context;
-		private readonly IFulfillmentClient _fulfillmentClient;
+    public class OrderWorkflowService
+    {
+        private readonly OrderDbContext _context;
+        private readonly IFulfillmentClient _fulfillmentClient;
 
-		public OrderWorkflowService(OrderDbContext context, IFulfillmentClient fulfillmentClient)
-		{
-			_context = context;
-			_fulfillmentClient = fulfillmentClient;
-		}
+        public OrderWorkflowService(
+            OrderDbContext context,
+            IFulfillmentClient fulfillmentClient)
+        {
+            _context = context;
+            _fulfillmentClient = fulfillmentClient;
+        }
 
-		public async Task<Order> PlaceOrderAsync(
-			int userId,
-			IReadOnlyCollection<OrderItemRequest> items,
-			CancellationToken cancellationToken = default)
-		{
-			if (items == null || items.Count == 0)
-			{
-				throw new OrderPlacementException("INVALID_REQUEST", "Order must contain at least one item.");
-			}
+        public async Task<Order> PlaceOrderAsync(
+            int userId,
+            string idempotencyKey,
+            IReadOnlyCollection<OrderItemRequest> items,
+            CancellationToken cancellationToken = default)
+        {
+            if (string.IsNullOrWhiteSpace(idempotencyKey))
+                throw new OrderPlacementException(
+                    "INVALID_REQUEST", "Idempotency key is required.");
 
-			if (items.Any(item => item.Qty <= 0))
-			{
-				throw new OrderPlacementException("INVALID_REQUEST", "Order items must have a quantity greater than zero.");
-			}
+            if (items == null || items.Count == 0)
+                throw new OrderPlacementException(
+                    "INVALID_REQUEST", "Order must contain at least one item.");
 
-			var productIds = items.Select(item => item.ProductId).Distinct().ToList();
+            if (items.Any(i => i.Qty <= 0))
+                throw new OrderPlacementException(
+                    "INVALID_REQUEST", "Order items must have a quantity greater than zero.");
 
-			await using var transaction = await _context.Database.BeginTransactionAsync(cancellationToken);
+            // 1️⃣ Idempotency check (fast path)
+            var existing = await _context.Orders
+                .FirstOrDefaultAsync(o =>
+                    o.UserId == userId &&
+                    o.IdempotencyKey == idempotencyKey,
+                    cancellationToken);
 
-			var inventories = await _context.Inventories
-				.Where(inventory => productIds.Contains(inventory.ProductId))
-				.ToListAsync(cancellationToken);
+            if (existing != null)
+                return existing;
 
-			var missingProductIds = productIds.Except(inventories.Select(i => i.ProductId)).ToList();
-			if (missingProductIds.Count > 0)
-			{
-				throw new OrderPlacementException("PRODUCT_NOT_FOUND", $"Unknown product IDs: {string.Join(", ", missingProductIds)}");
-			}
+            await using var transaction =
+                await _context.Database.BeginTransactionAsync(cancellationToken);
 
-			foreach (var item in items)
-			{
-				var inventory = inventories.First(i => i.ProductId == item.ProductId);
-				if (inventory.AvailableQty < item.Qty)
-				{
-					throw new OrderPlacementException(
-						"INSUFFICIENT_STOCK",
-						$"Not enough stock for product {item.ProductId} (requested: {item.Qty}, available: {inventory.AvailableQty}).");
-				}
-			}
+            // 2️⃣ Optimistic stock deduction (atomic)
+            foreach (var item in items)
+            {
+                var rowsAffected =
+                    await _context.Database.ExecuteSqlInterpolatedAsync(
+                        $"""
+                    UPDATE Inventories
+                    SET AvailableQty = AvailableQty - {item.Qty},
+                        UpdatedAt = {DateTime.UtcNow}
+                    WHERE ProductId = {item.ProductId}
+                      AND AvailableQty >= {item.Qty}
+                    """,
+                        cancellationToken);
 
-			foreach (var item in items)
-			{
-				var inventory = inventories.First(i => i.ProductId == item.ProductId);
-				inventory.AvailableQty -= item.Qty;
-				inventory.UpdatedAt = DateTime.UtcNow;
-			}
+                if (rowsAffected == 0)
+                {
+                    throw new OrderPlacementException(
+                        "INSUFFICIENT_STOCK",
+                        $"Not enough stock for product {item.ProductId}");
+                }
+            }
 
-			var order = new Order
-			{
-				UserId = userId,
-				Status = OrderStatus.Pending,
-				CreatedAt = DateTime.UtcNow,
-				UpdatedAt = DateTime.UtcNow,
-				Items = items.Select(item => new OrderItem
-				{
-					ProductId = item.ProductId,
-					Qty = item.Qty
-				}).ToList()
-			};
+            // 3️⃣ Persist order
+            var order = new Order
+            {
+                UserId = userId,
+                IdempotencyKey = idempotencyKey,
+                Status = OrderStatus.Pending,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow,
+                Items = items.Select(i => new OrderItem
+                {
+                    ProductId = i.ProductId,
+                    Qty = i.Qty
+                }).ToList()
+            };
 
-			_context.Orders.Add(order);
-			await _context.SaveChangesAsync(cancellationToken);
+            _context.Orders.Add(order);
+            await _context.SaveChangesAsync(cancellationToken);
 
-			await _fulfillmentClient.CreateTaskAsync(order.OrderId, cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
 
-			await transaction.CommitAsync(cancellationToken);
+            // 🔥 Raw SQL invalidates tracking
+            _context.ChangeTracker.Clear();
 
-			return order;
-		}
+            // 4️⃣ Fire-and-forget fulfillment task
+            _ = Task.Run(() =>
+                _fulfillmentClient.CreateTaskAsync(
+                    order.OrderId,
+                    CancellationToken.None));
 
-		public async Task<bool> ApplyFulfillmentUpdateAsync(
-			int orderId,
-			string taskStatus,
-			int? workerId,
-			CancellationToken cancellationToken = default)
-		{
-			var order = await _context.Orders.FirstOrDefaultAsync(o => o.OrderId == orderId, cancellationToken);
-			if (order == null)
-			{
-				return false;
-			}
+            return order;
+        }
 
-			switch (taskStatus)
-			{
-				case FulfillmentTaskStatus.Assigned:
-				case FulfillmentTaskStatus.InProgress:
-					order.Status = OrderStatus.Pending;
-					order.UpdatedAt = DateTime.UtcNow;
-					await _context.SaveChangesAsync(cancellationToken);
-					return true;
-				case FulfillmentTaskStatus.Completed:
-					order.Status = OrderStatus.Completed;
-					order.UpdatedAt = DateTime.UtcNow;
-					await _context.SaveChangesAsync(cancellationToken);
-					return true;
-				case FulfillmentTaskStatus.Rejected:
-					_context.Orders.Remove(order);
-					await _context.SaveChangesAsync(cancellationToken);
-					return true;
-				default:
-					throw new OrderPlacementException("INVALID_STATUS", $"Unsupported fulfillment status: {taskStatus}.");
-			}
-		}
-	}
+        public async Task<bool> ApplyFulfillmentUpdateAsync(
+            int orderId,
+            string taskStatus,
+            int? workerId,
+            CancellationToken cancellationToken = default)
+        {
+            var order = await _context.Orders
+                .FirstOrDefaultAsync(o => o.OrderId == orderId, cancellationToken);
+
+            if (order == null)
+                return false;
+
+            switch (taskStatus)
+            {
+                case FulfillmentTaskStatus.Assigned:
+                case FulfillmentTaskStatus.InProgress:
+                    order.Status = OrderStatus.Pending;
+                    order.UpdatedAt = DateTime.UtcNow;
+                    break;
+
+                case FulfillmentTaskStatus.Completed:
+                    order.Status = OrderStatus.Completed;
+                    order.UpdatedAt = DateTime.UtcNow;
+                    break;
+
+                case FulfillmentTaskStatus.Rejected:
+                    _context.Orders.Remove(order);
+                    break;
+
+                default:
+                    throw new OrderPlacementException(
+                        "INVALID_STATUS",
+                        $"Unsupported fulfillment status: {taskStatus}");
+            }
+
+            await _context.SaveChangesAsync(cancellationToken);
+            return true;
+        }
+    }
+
 }

@@ -25,6 +25,10 @@ public class OrderDbContext : DbContext
                   .OnDelete(DeleteBehavior.Cascade);
         });
 
+        modelBuilder.Entity<Order>()
+    .HasIndex(o => new { o.UserId, o.IdempotencyKey })
+    .IsUnique();
+
         modelBuilder.Entity<OrderItem>(entity =>
         {
             entity.HasKey(e => e.Id);

@@ -48,13 +48,38 @@ app.UseHttpsRedirection();
 
 
 app.MapPost("/orders", async (
+    HttpContext httpContext,
     CreateOrderRequest request,
     OrderWorkflowService workflowService,
     CancellationToken cancellationToken) =>
 {
+    // ---------------------------
+    // 1️⃣ Extract Idempotency-Key
+    // ---------------------------
+    if (!httpContext.Request.Headers.TryGetValue("Idempotency-Key", out var key) ||
+        string.IsNullOrWhiteSpace(key))
+    {
+        return Results.BadRequest(new
+        {
+            error = "INVALID_REQUEST",
+            message = "Idempotency-Key header is required."
+        });
+    }
+
     try
     {
-        var order = await workflowService.PlaceOrderAsync(request.UserId, request.Items, cancellationToken);
+        // ---------------------------
+        // 2️⃣ Place order (orchestrator)
+        // ---------------------------
+        var order = await workflowService.PlaceOrderAsync(
+            request.UserId,
+            key!,
+            request.Items,
+            cancellationToken);
+
+        // ---------------------------
+        // 3️⃣ Return immediately (async fulfillment)
+        // ---------------------------
         return Results.Created($"/orders/{order.OrderId}", new
         {
             orderId = order.OrderId,
@@ -64,17 +89,30 @@ app.MapPost("/orders", async (
     }
     catch (OrderPlacementException ex) when (ex.Code == "INVALID_REQUEST")
     {
-        return Results.BadRequest(new { error = ex.Code, message = ex.Message });
+        return Results.BadRequest(new
+        {
+            error = ex.Code,
+            message = ex.Message
+        });
     }
     catch (OrderPlacementException ex) when (ex.Code == "PRODUCT_NOT_FOUND")
     {
-        return Results.NotFound(new { error = ex.Code, message = ex.Message });
+        return Results.NotFound(new
+        {
+            error = ex.Code,
+            message = ex.Message
+        });
     }
     catch (OrderPlacementException ex) when (ex.Code == "INSUFFICIENT_STOCK")
     {
-        return Results.Conflict(new { error = ex.Code, message = ex.Message });
+        return Results.Conflict(new
+        {
+            error = ex.Code,
+            message = ex.Message
+        });
     }
 });
+
 
 app.MapPost("/orders/{orderId:int}/fulfillment", async (
     int orderId,

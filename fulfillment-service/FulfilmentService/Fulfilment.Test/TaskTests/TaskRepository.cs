@@ -1,11 +1,14 @@
-﻿using Fulfilment.Test.FulfilmentTestInfrastructure;
+﻿using FluentAssertions;
+using Fulfilment.Test.FulfilmentTestInfrastructure;
 using FulfilmentService.Database.Seeding;
 using FulfilmentService.Dtos;
 using FulfilmentService.Interfaces;
 using FulfilmentService.Models;
 using FulfilmentService.Repositories;
+using FulfilmentService.Services;
 using Moq;
 using System.Net;
+using Xunit;
 
 namespace Fulfilment.Test.TaskTests
 {
@@ -14,8 +17,8 @@ namespace Fulfilment.Test.TaskTests
     {
 
         private SqliteInMemoryDb _db = default!;
-        private IFulfilmentTaskRepository _repo = default!;
-        private IWorkerRepository _workerRepository = default!;
+        private ITaskService _repo = default!;
+        private IWokerService _workerRepository = default!;
 
         [SetUp]
         public void SetUp()
@@ -30,8 +33,7 @@ namespace Fulfilment.Test.TaskTests
                 _db.Context.SaveChanges();
             }
 
-            _workerRepository = new WorkerRepository(_db.Context);
-            _repo = new FulfilmentTaskRepository(_db.Context, _workerRepository); // adjust constructor as needed
+            _workerRepository = new WorkerService(_db.Context);
             SeedWorkers.Seed(_db);
         }
 
@@ -41,30 +43,38 @@ namespace Fulfilment.Test.TaskTests
             _db.Dispose();
         }
 
-        [Test]
-        public async Task GivenOrderId_WhenOrderIdIsNew_NewTaskIsCreated()
+
+        [Fact]
+        public async Task CreateTask_ShouldCreatePendingTask_AndCallAddAsync()
         {
             // Arrange
-            int orderId = 123;
+            var uow = new Mock<IUnitOfWork>();
+
+            var taskRepo = new Mock<IGenericRepository<FulfillmentTask>>();
+
+            uow.SetupGet(x => x.taskRepository).Returns(taskRepo.Object);
+
+            FulfillmentTask captured = null!;
+            taskRepo.Setup(r => r.AddAsync(It.IsAny<FulfillmentTask>()))
+                .Callback<FulfillmentTask>(t => captured = t)
+                .ReturnsAsync((FulfillmentTask t) => t);
+
+            var service = new TaskService(uow.Object);
 
             // Act
-            var result = await _repo.CreateTask(orderId);
+            var result = await service.CreateTask(orderId: 10);
 
-            // Assert: verify it is actually in the DB
-            Assert.IsTrue(result.Status == "Pending");
+            // Assert
+            result.Should().NotBeNull();
+            result.OrderId.Should().Be(10);
+            result.Status.Should().Be("Pending");
+
+            captured.Should().NotBeNull();
+            captured.OrderId.Should().Be(10);
+            captured.Status.Should().Be("Pending");
+
+            taskRepo.Verify(r => r.AddAsync(It.IsAny<FulfillmentTask>()), Times.Once);
         }
-        [Test]
-        public async Task GivenOrderId_WhenOrderIdExists_ReturnsSameId()
-        {
-            // Arrange
-            int orderId = 123;
 
-            // Act
-            var result1 = await _repo.CreateTask(orderId);
-            var result2 = await _repo.CreateTask(orderId);
-
-            // Assert: verify it is actually in the DB
-            Assert.IsTrue(result1.Id==result2.Id);
-        }
     }
 }

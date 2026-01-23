@@ -1,4 +1,5 @@
 
+using FulfilmentService.BackgroundJob;
 using FulfilmentService.Database;
 using FulfilmentService.Database.Seeding;
 using FulfilmentService.ExternalClients;
@@ -14,23 +15,12 @@ namespace FulfilmentService
         {
             var builder = WebApplication.CreateBuilder(args);
 
-            // Add services to the container.
-
             builder.Services.AddControllers();
             builder.Services.AddEndpointsApiExplorer();
             builder.Services.AddSwaggerGen();
-            builder.Services.AddScoped<IFulfilmentTaskRepository, FulfilmentTaskRepository>();
-            builder.Services.AddScoped<IWorkerRepository, WorkerRepository>();
-            builder.Services.AddScoped<IOrderServiceClient, OrderServiceClient>();
-            builder.Services.AddDbContext<FulfilmentDbContext>(opts =>
-            {
-                opts.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection"));
-            });
-            builder.Services.AddHttpClient<IOrderServiceClient, OrderServiceClient>(client =>
-            {
-                var baseUrl = builder.Configuration["FulfillmentService:BaseUrl"] ?? "https://localhost:7017";
-                client.BaseAddress = new Uri(baseUrl);
-            });
+            builder.Services.AddLogging(opt => { opt.AddConsole(); });
+            builder.Services.AddFulfilmentServiceDependencies(builder.Configuration);
+
             var app = builder.Build();
 
             // Configure the HTTP request pipeline.
@@ -38,11 +28,11 @@ namespace FulfilmentService
             {
                 app.UseSwagger();
                 app.UseSwaggerUI();
-                //using (var scope = app.Services.CreateScope())
-                //{
-                //    var dbContext = scope.ServiceProvider.GetRequiredService<FulfilmentDbContext>();
-                //    WorkerSeeder.SeedWorkers(dbContext);
-                //}
+                using (var scope = app.Services.CreateScope())
+                {
+                    var dbContext = scope.ServiceProvider.GetRequiredService<FulfilmentDbContext>();
+                    WorkerSeeder.SeedWorkers(dbContext);
+                }
             }
 
             app.UseHttpsRedirection();

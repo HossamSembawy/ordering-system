@@ -1,4 +1,5 @@
-﻿using FulfilmentService.Dtos;
+﻿using FulfilmentService.BackgroundJob;
+using FulfilmentService.Dtos;
 using FulfilmentService.ExternalClients;
 using FulfilmentService.Interfaces;
 using Microsoft.AspNetCore.Http;
@@ -11,47 +12,56 @@ namespace FulfilmentService.Controllers
     [ApiController]
     public class TasksController : ControllerBase
     {
-        private readonly IFulfilmentTaskRepository _fulfilmentTaskRepository;
+        private readonly ITaskService _taskService;
         private readonly IOrderServiceClient _orderClient;
+        private readonly IBackgroundTaskQueue _taskQueue;
 
-        public TasksController(IFulfilmentTaskRepository fulfilmentTaskRepository, IOrderServiceClient orderClient)
+
+        public TasksController(ITaskService taskService, IOrderServiceClient orderClient, IBackgroundTaskQueue taskQueue)
         {
-            _fulfilmentTaskRepository = fulfilmentTaskRepository;
+            _taskService = taskService;
             _orderClient = orderClient;
+            _taskQueue = taskQueue;
         }
         [HttpPost]
         public async Task<IActionResult> CreateTask([FromBody] int OrderId)
         {
-            var result = await _fulfilmentTaskRepository.CreateTask(OrderId);
-            if (result.Status == "AlreadyExists")
-            {
-                return Ok(result);
-            }
-            return CreatedAtAction("GetTask", new { taskId = result.Id }, result);
-        }
-        [HttpPost("{taskId}/Assign")]
-        public async Task<IActionResult> AssignTask(int taskId)
-        {
             try
             {
-                var result = await _fulfilmentTaskRepository.AssignTask(taskId);
-                var task = await _fulfilmentTaskRepository.Get(taskId);
-                await _orderClient.UpdateOrderStatus(task);
-                return Ok(result);
-            }catch(Exception ex)
+                var result = await _taskService.CreateTask(OrderId);
+                return CreatedAtAction("GetTask", new { taskId = result.Id }, result);
+            }
+            catch (Exception ex)
             {
-                return BadRequest(ex.Message);
+                return Ok(await _taskService.GetByOrderId(OrderId));
             }
         }
-        [HttpPatch("/{taskId}/status")]
+        
+        [HttpPatch("{taskId}/status")]
         [ProducesErrorResponseType(typeof(BadRequestObjectResult))]
         public async Task<IActionResult> UpdateTaskStatus(int taskId, UpdateTaskDto model)
         {
             try
             {
-                var result = await _fulfilmentTaskRepository.UpdateTaskStatus(taskId, model);
-                var task = await _fulfilmentTaskRepository.Get(taskId);
-                await _orderClient.UpdateOrderStatus(task);
+                var result = await _taskService.UpdateTaskStatus(taskId, model);
+                _taskQueue.QueueBackgroundWorkItem(async (serviceProvider, token) =>
+                {
+                    var logger = serviceProvider.GetRequiredService<ILogger<TasksController>>();
+                    var orderServiceClient = serviceProvider.GetRequiredService<IOrderServiceClient>();
+
+                    logger.LogInformation("Communication with Order Service started");
+
+                    try
+                    {
+                        await orderServiceClient.UpdateOrderStatus(result);
+                        logger.LogInformation("Communication with Order Service completed successfully.");
+                    }
+                    catch (Exception ex)
+                    {
+                        logger.LogError(ex, "Error occurred while Communicating with Order Service.");
+                    }
+                });
+                // try to assign worker to any needed task
                 return Ok(result);
             }
             catch (Exception ex)
@@ -63,7 +73,7 @@ namespace FulfilmentService.Controllers
         [ActionName("GetTask")]
         public async Task<IActionResult> GetTask(int taskId)
         {
-            var result = await _fulfilmentTaskRepository.Get(taskId);
+            var result = await _taskService.Get(taskId);
             return Ok(result);
         }
     }

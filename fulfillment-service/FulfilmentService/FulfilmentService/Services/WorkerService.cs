@@ -2,17 +2,17 @@
 using FulfilmentService.Interfaces;
 using Microsoft.EntityFrameworkCore;
 
-namespace FulfilmentService.Repositories
+namespace FulfilmentService.Services
 {
-    public class WorkerRepository : IWorkerRepository
+    public class WorkerService : IWokerService
     {
         private readonly FulfilmentDbContext _dbContext;
 
-        public WorkerRepository(FulfilmentDbContext dbContext)
+        public WorkerService(FulfilmentDbContext dbContext)
         {
             _dbContext = dbContext;
         }
-        public  async Task<int> GetCountActiveTasks(int workerId)
+        public async Task<int> GetCountActiveTasks(int workerId)
         {
             var worker = await _dbContext.Workers.AsNoTracking().FirstOrDefaultAsync(w => w.Id == workerId);
             return worker!.ActiveTasksCount;

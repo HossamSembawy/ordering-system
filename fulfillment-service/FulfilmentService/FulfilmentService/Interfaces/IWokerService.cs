@@ -1,6 +1,6 @@
 ﻿namespace FulfilmentService.Interfaces
 {
-    public interface IWorkerRepository
+    public interface IWokerService
     {
         public Task<int> GetCountActiveTasks(int workerId);
     }

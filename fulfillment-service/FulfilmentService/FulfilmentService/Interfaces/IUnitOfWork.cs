@@ -8,6 +8,7 @@ namespace FulfilmentService.Interfaces
         IGenericRepository<Cursor> CursorRepository { get; }
         IGenericRepository<Worker> WorkerRepository { get; }
         IGenericRepository<FulfillmentTask> taskRepository { get; }
+        IRedisRepository<string> keys { get; }
         Task SaveChanges();
         Task<IDbContextTransaction> BeginTransaction(bool serializable);
         Task CommitTransaction();

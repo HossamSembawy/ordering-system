@@ -4,7 +4,9 @@ using FulfilmentService.ExternalClients;
 using FulfilmentService.Interfaces;
 using FulfilmentService.Repositories;
 using FulfilmentService.Services;
+using FulfilmentService.Strategies;
 using Microsoft.EntityFrameworkCore;
+using StackExchange.Redis;
 
 namespace FulfilmentService
 {
@@ -12,6 +14,15 @@ namespace FulfilmentService
     {
         public static void AddFulfilmentServiceDependencies(this IServiceCollection services, IConfiguration configuration)
         {
+            services.AddSingleton<IConnectionMultiplexer>(sp =>
+            {
+
+                var conf = configuration["Redis:ConnectionString"];
+                return ConnectionMultiplexer.Connect(conf!);
+            });
+            services.AddScoped<IAssignmentStrategy, RoundRobinStrategy>();
+            services.AddScoped(typeof(IRedisRepository<>), typeof(RedisRepository<>));
+            services.AddLogging(opt => { opt.AddConsole(); });
             services.AddSingleton<IBackgroundTaskQueue, BackgroundTaskQueue>();
             services.AddHostedService<QueuedProcessorBackgroundService>();
             services.AddHostedService<BackgroundRefresh>();

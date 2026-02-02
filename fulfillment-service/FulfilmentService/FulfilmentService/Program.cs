@@ -18,7 +18,6 @@ namespace FulfilmentService
             builder.Services.AddControllers();
             builder.Services.AddEndpointsApiExplorer();
             builder.Services.AddSwaggerGen();
-            builder.Services.AddLogging(opt => { opt.AddConsole(); });
             builder.Services.AddFulfilmentServiceDependencies(builder.Configuration);
 
             var app = builder.Build();

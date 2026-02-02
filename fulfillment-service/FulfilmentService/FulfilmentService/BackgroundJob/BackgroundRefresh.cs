@@ -28,7 +28,7 @@ namespace FulfilmentService.BackgroundJob
 
         public Task StartAsync(CancellationToken cancellationToken)
         {
-            _timer = new Timer(TimerTick, null, TimeSpan.Zero, TimeSpan.FromSeconds(5));
+            _timer = new Timer(TimerTick, null, TimeSpan.Zero, TimeSpan.FromSeconds(10));
             return Task.CompletedTask;
         }
 
@@ -63,7 +63,9 @@ namespace FulfilmentService.BackgroundJob
                 // Example action (ensure AssignTask is idempotent)
                 foreach (var t in pending)
                 {
-                    await taskService.AssignTask(t.Id);
+                    int.TryParse(t, out int key);
+                    var task = await taskService.AssignTask(key);
+                    _logger.LogInformation($"Assigned task {t}.");
                 }
             }
             catch (Exception ex)
@@ -74,7 +76,6 @@ namespace FulfilmentService.BackgroundJob
             {
                 _lock.Release();
             }
-
         }
 
         public Task StopAsync(CancellationToken cancellationToken)

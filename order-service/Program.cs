@@ -40,11 +40,11 @@ if (app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 
-//using (var scope = app.Services.CreateScope())
-//{
-//    var dbContext = scope.ServiceProvider.GetRequiredService<OrderDbContext>();
-//    InventorySeeding.SeedInventory(dbContext);
-//}
+using (var scope = app.Services.CreateScope())
+{
+    var dbContext = scope.ServiceProvider.GetRequiredService<OrderDbContext>();
+    InventorySeeding.SeedInventory(dbContext);
+}
 
 
 app.MapPost("/orders", async (

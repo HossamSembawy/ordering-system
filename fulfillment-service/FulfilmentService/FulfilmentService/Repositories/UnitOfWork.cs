@@ -3,6 +3,7 @@ using FulfilmentService.Interfaces;
 using FulfilmentService.Models;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
+using StackExchange.Redis;
 
 namespace FulfilmentService.Repositories
 {
@@ -12,18 +13,23 @@ namespace FulfilmentService.Repositories
         private Lazy<IGenericRepository<Worker>> _workerRepository;
         private Lazy<IGenericRepository<FulfillmentTask>> _taskRepository;
         private Lazy<IGenericRepository<Cursor>> _cursorRepository;
+        private Lazy<IRedisRepository<string>> _keys;
 
 
-        public UnitOfWork(FulfilmentDbContext dbContext)
+
+        public UnitOfWork(FulfilmentDbContext dbContext,IConnectionMultiplexer connection)
         {
             _workerRepository = new Lazy<IGenericRepository<Worker>>(() => new GenericRepository<Worker>(dbContext));
             _taskRepository = new Lazy<IGenericRepository<FulfillmentTask>>(() => new GenericRepository<FulfillmentTask>(dbContext));
             _cursorRepository = new Lazy<IGenericRepository<Cursor>>(() => new GenericRepository<Cursor>(dbContext));
+            _keys = new Lazy<IRedisRepository<string>>(() => new RedisRepository<string>(connection));
             _dbContext = dbContext;
         }
         public IGenericRepository<Cursor> CursorRepository => _cursorRepository.Value;
         public IGenericRepository<Worker> WorkerRepository => _workerRepository.Value;
         public IGenericRepository<FulfillmentTask> taskRepository => _taskRepository.Value;
+
+        public IRedisRepository<string> keys => _keys.Value;
 
         public async Task<IDbContextTransaction> BeginTransaction(bool serializable)
         {

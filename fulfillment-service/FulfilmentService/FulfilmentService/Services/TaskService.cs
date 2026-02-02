@@ -4,16 +4,18 @@ using FulfilmentService.Interfaces;
 using Microsoft.EntityFrameworkCore;
 using FulfilmentService.Models;
 using System.Threading.Tasks;
+using FulfilmentService.Strategies;
 
 namespace FulfilmentService.Services
 {
     public class TaskService : ITaskService
     {
         private readonly IUnitOfWork _unitOfWork;
-
-        public TaskService(IUnitOfWork unitOfWork)
+        private readonly IAssignmentStrategy _assignmentStrategy;
+        public TaskService(IUnitOfWork unitOfWork, IAssignmentStrategy assignmentStrategy)
         {
             _unitOfWork = unitOfWork;
+            _assignmentStrategy = assignmentStrategy;
         }
         public async Task<FulfillmentTask> CreateTask(int orderId)
         {
@@ -25,6 +27,7 @@ namespace FulfilmentService.Services
                     Status = "Pending"
                 };
                 var task = await _unitOfWork.taskRepository.AddAsync(fulfilmentTask);
+                await _unitOfWork.keys.Set($"task:{task.Id}", task.Id.ToString());
                 return task;
             }
             catch (Exception ex)
@@ -35,58 +38,16 @@ namespace FulfilmentService.Services
 
         public async Task<FulfillmentTask> AssignTask(int taskId)
         {
-            using var transaction = await _unitOfWork.BeginTransaction(false);
             try
             {
-                var task = await _unitOfWork.taskRepository.GetByCondition(f => f.Id == taskId);
-                if (task is null)
-                {
-                    throw new Exception("Task not found");
-                }
-                if (task.WorkerId is not null)
-                {
-                    throw new Exception("Task already assigned");
-                }
-                var cursorWorkerId = await _unitOfWork.CursorRepository.GetByCondition(c => c.Id == 1);
-                int nextWorkerId = cursorWorkerId!.Current % 5 + 1;
-                int workerId = await GetValidWorker(nextWorkerId);
-                if (workerId == -1)
-                {
-                    throw new Exception("No available workers");
-                }
-                task.WorkerId = workerId;
-                task.Status = "ASSIGNED";
-                cursorWorkerId.Current = workerId;
-                var worker = await _unitOfWork.WorkerRepository.GetWithLocking(workerId, "Workers");
-                worker!.ActiveTasksCount++;
-                await _unitOfWork.taskRepository.UpdateAsync(task);
-                await _unitOfWork.WorkerRepository.UpdateAsync(worker);
-                await _unitOfWork.CursorRepository.UpdateAsync(cursorWorkerId);
-                await _unitOfWork.SaveChanges();
-                await transaction.CommitAsync();
+                var task = await _assignmentStrategy.AssignWorker(taskId);
+                _unitOfWork.keys.Delete($"task:{task.Id}");
                 return task;
             }
-            catch (Exception ex)
+            catch(Exception ex)
             {
-                await transaction.RollbackAsync();
-                throw new Exception("Failed to assign a task", ex);
+                throw new Exception("Failed to assign task", ex);
             }
-        }
-        private async Task<int> GetValidWorker(int workerId)
-        {
-            const int MaxTasks = 5;
-            int steps = 6;
-            while (steps-- > 0)
-            {
-                var worker = await _unitOfWork.WorkerRepository.GetWithLocking(workerId,"Workers");
-                if (worker!.ActiveTasksCount < MaxTasks)
-                {
-                    return workerId;
-                }
-                workerId = workerId % 5 + 1;
-            }
-            if (steps <= 0) return -1;
-            return workerId;
         }
 
         public async Task<FulfillmentTask> UpdateTaskStatus(int taskId, UpdateTaskDto model)
@@ -134,9 +95,9 @@ namespace FulfilmentService.Services
             var task = await _unitOfWork.taskRepository.GetByCondition(f => f.OrderId == orderId);
             return task;
         }
-        public async Task<List<FulfillmentTask>?> GetPendingTasks()
+        public async Task<List<string>?> GetPendingTasks()
         {
-            var tasks = await _unitOfWork.taskRepository.GetListByCondition(f => f.Status == "Pending");
+            var tasks = await _unitOfWork.keys.GetList();
             return tasks;
         }
     }

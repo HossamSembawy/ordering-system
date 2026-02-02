@@ -10,6 +10,6 @@ namespace FulfilmentService.Interfaces
         Task<FulfillmentTask> UpdateTaskStatus(int taskId, UpdateTaskDto model);
         Task<FulfillmentTask> Get(int taskId);
         Task<FulfillmentTask> GetByOrderId(int orderId);
-        Task<List<FulfillmentTask>?> GetPendingTasks();
+        Task<List<string>?> GetPendingTasks();
     }
 }
